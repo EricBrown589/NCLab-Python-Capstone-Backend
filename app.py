@@ -1,9 +1,12 @@
-from flask import Flask
+from flask import Flask, jsonify
+from flask_cors import CORS
 import psycopg2
 import db_conn
+import scrython
 
 app = Flask(__name__)
 
+CORS(app)
 
 # Create tables in database
 conn = db_conn.db_connection()
@@ -14,8 +17,6 @@ create_tables_sql = (
         card_id SERIAL PRIMARY KEY,
         name VARCHAR(255),
         price REAL,
-        image_status VARCHAR(255),
-        image_uri VARCHAR(255),
         card_uid VARCHAR(255)
     );
     """,
@@ -40,13 +41,18 @@ try:
     print("Tables created successfully.")
 except psycopg2.Error as e:
     print(f"Error creating table: {e}")
-finally:
-    conn.close()
-    cur.close()
 
-@app.route('/')
-def hello_world():  # put application's code here
-    return 'Hello World!'
+@app.route('/cards')
+def get_cards():  # put application's code here
+    cur.execute("SELECT name, price FROM cards")
+    data = cur.fetchall()
+    cards = []
+    for row in data:
+        cards.append({
+            'name': row[0],
+            'price': row[1],
+        })
+    return jsonify(cards)
 
 
 if __name__ == '__main__':
