@@ -77,7 +77,7 @@ def get_cards():  # put application's code here
             })
         return jsonify(cards), 200
     except psycopg2.Error as e:
-        return jsonify({'message': f"Could not get data: {str(e)}"}), 500
+        return jsonify({'message': f"Could not get data: {str(e)}"})
     finally:
         cur.close()
         conn.close()
@@ -119,8 +119,30 @@ def add_card():
         cur.close()
         conn.close()
 
-    ## Add UPDATE method to control
-    ## amount_owned in database
+@app.route('/cards/update', methods=['PUT'])
+def update_amount_owned():
+    """Update the amount of owned cards."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        data = request.json
+        name = data['name']
+        update_amount = data['amount_owned']
+        try:
+            cur.execute("UPDATE cards SET amount_owned = %s WHERE name = %s", (update_amount, name))
+            conn.commit()
+            return jsonify({'message': 'Amount updated successfully.'})
+        except psycopg2.Error as e:
+            conn.rollback()
+            return jsonify({'message': f"Error updating amount: {e}"})
+    except requests.exceptions.HTTPError as e:
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
 
     ## Add DELETE method to remove a
     ## when amount_owned reaches 0
