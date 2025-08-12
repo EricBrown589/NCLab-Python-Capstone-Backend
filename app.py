@@ -65,15 +65,17 @@ def get_cards():  # put application's code here
     except psycopg2.Error as e:
         print(f"Error connecting to PostgreSQL: {e}")
     try:
-        cur.execute("SELECT name, price, image_url, amount_owned FROM cards")
+        cur.execute("SELECT card_id, name, price, card_uid, image_url, amount_owned FROM cards")
         data = cur.fetchall()
         cards = []
         for row in data:
             cards.append({
-                'name': row[0],
-                'price': row[1],
-                'image_url': row[2],
-                'amount_owned': row[3]
+                'card_id': row[0],
+                'name': row[1],
+                'price': row[2],
+                'card_uid': row[3],
+                'image_url': row[4],
+                'amount_owned': row[5]
             })
         return jsonify(cards), 200
     except psycopg2.Error as e:
@@ -144,8 +146,24 @@ def update_amount_owned():
         cur.close()
         conn.close()
 
-    ## Add DELETE method to remove a
-    ## when amount_owned reaches 0
+@app.route('/cards/delete/<int:card_id>', methods=['DELETE'])
+def delete_card(card_id):
+    """Delete card from the database when amount_owned is zero."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("DELETE FROM cards WHERE card_id = %s AND amount_owned = 0", (card_id,))
+        conn.commit()
+        return jsonify({'message': 'Card deleted successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
 
     ## add methods for decks
 
