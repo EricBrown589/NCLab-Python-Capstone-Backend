@@ -85,7 +85,7 @@ def get_cards():  # put application's code here
         conn.close()
 
 
-@app.route('/cards/post', methods=['POST'])
+@app.route('/cards/post', methods=['POST', 'UPDATE'])
 def add_card():
     """Call the Scryfall api and get a card to add to the database."""
     try:
@@ -103,17 +103,20 @@ def add_card():
         card_price = scryfall_json['prices']['usd']
         card_uid = scryfall_json['id']
         card_image = scryfall_json['image_uris']['small']
-
-        ## Add a way to check if card
-        ## already exists in database
-        ## and increment amount_owned
-
     except requests.exceptions.HTTPError as e:
         return jsonify({'error': str(e)})
     try:
-        cur.execute("INSERT INTO cards (name, price, card_uid, image_url, amount_owned) VALUES (%s, %s, %s, %s, %s)", (card_name, card_price, card_uid, card_image, 1))
-        conn.commit()
-        return jsonify({'message': 'Card added successfully.'})
+        cur.execute("SELECT * from cards where name = %s", (card_name,))
+        data = cur.fetchone()
+        print(data)
+        if data is None:
+            cur.execute("INSERT INTO cards (name, price, card_uid, image_url, amount_owned) VALUES (%s, %s, %s, %s, %s)", (card_name, card_price, card_uid, card_image, 1))
+            conn.commit()
+            return jsonify({'message': 'Card added successfully.'})
+        else:
+            cur.execute("UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s", (card_name,))
+            conn.commit()
+            return jsonify({'message': 'Card updated successfully.'})
     except psycopg2.Error as e:
         conn.rollback()
         return jsonify({'message': f"Error adding card: {e}"})
