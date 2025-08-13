@@ -14,6 +14,7 @@ headers = {
 }
 
 def create_tables():
+    """Create the tables in the database if they don't exist already."""
     try:
         conn = db_conn.db_connection()
         cur = conn.cursor()
@@ -25,7 +26,9 @@ def create_tables():
             card_id SERIAL PRIMARY KEY,
             name VARCHAR(255),
             price REAL,
-            card_uid VARCHAR(255)
+            card_uid VARCHAR(255),
+            image_url VARCHAR(255),
+            amount_owned REAL
         );
         """,
         """
@@ -62,23 +65,27 @@ def get_cards():  # put application's code here
     except psycopg2.Error as e:
         print(f"Error connecting to PostgreSQL: {e}")
     try:
-        cur.execute("SELECT name, price FROM cards")
+        cur.execute("SELECT card_id, name, price, card_uid, image_url, amount_owned FROM cards")
         data = cur.fetchall()
         cards = []
         for row in data:
             cards.append({
-                'name': row[0],
-                'price': row[1],
+                'card_id': row[0],
+                'name': row[1],
+                'price': row[2],
+                'card_uid': row[3],
+                'image_url': row[4],
+                'amount_owned': row[5]
             })
         return jsonify(cards), 200
     except psycopg2.Error as e:
-        return jsonify({'message': f"Could not get data: {str(e)}"}), 500
+        return jsonify({'message': f"Could not get data: {str(e)}"})
     finally:
         cur.close()
         conn.close()
 
 
-@app.route('/cards/post', methods=['POST'])
+@app.route('/cards/post', methods=['POST', 'UPDATE'])
 def add_card():
     """Call the Scryfall api and get a card to add to the database."""
     try:
@@ -95,12 +102,21 @@ def add_card():
         card_name = scryfall_json['name']
         card_price = scryfall_json['prices']['usd']
         card_uid = scryfall_json['id']
+        card_image = scryfall_json['image_uris']['small']
     except requests.exceptions.HTTPError as e:
         return jsonify({'error': str(e)})
     try:
-        cur.execute("INSERT INTO cards (name, price, card_uid) VALUES (%s, %s, %s)", (card_name, card_price, card_uid))
-        conn.commit()
-        return jsonify({'message': 'Card added successfully.'})
+        cur.execute("SELECT * from cards where name = %s", (card_name,))
+        data = cur.fetchone()
+        print(data)
+        if data is None:
+            cur.execute("INSERT INTO cards (name, price, card_uid, image_url, amount_owned) VALUES (%s, %s, %s, %s, %s)", (card_name, card_price, card_uid, card_image, 1))
+            conn.commit()
+            return jsonify({'message': 'Card added successfully.'})
+        else:
+            cur.execute("UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s", (card_name,))
+            conn.commit()
+            return jsonify({'message': 'Card updated successfully.'})
     except psycopg2.Error as e:
         conn.rollback()
         return jsonify({'message': f"Error adding card: {e}"})
@@ -108,6 +124,175 @@ def add_card():
         cur.close()
         conn.close()
 
+@app.route('/cards/update', methods=['PUT'])
+def update_amount_owned():
+    """Update the amount of owned cards."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        data = request.json
+        name = data['name']
+        update_amount = data['amount_owned']
+        try:
+            cur.execute("UPDATE cards SET amount_owned = %s WHERE name = %s", (update_amount, name))
+            conn.commit()
+            return jsonify({'message': 'Amount updated successfully.'})
+        except psycopg2.Error as e:
+            conn.rollback()
+            return jsonify({'message': f"Error updating amount: {e}"})
+    except requests.exceptions.HTTPError as e:
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/cards/delete/<int:card_id>', methods=['DELETE'])
+def delete_card(card_id):
+    """Delete card from the database when amount_owned is zero."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("DELETE FROM cards WHERE card_id = %s AND amount_owned = 0", (card_id,))
+        conn.commit()
+        return jsonify({'message': 'Card deleted successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/decks', methods=['GET'])
+def get_decks():
+    """Get all decks from the database."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("SELECT * FROM decks")
+        data = cur.fetchall()
+        decks = []
+        for row in data:
+            decks.append({
+                'deck_id': row[0],
+                'name': row[1],
+            })
+        return jsonify(decks)
+    except psycopg2.OperationalError as e:
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/decks/add', methods=['POST'])
+def add_deck():
+    """Create a new deck in the database."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        data = request.json
+        name = data['name']
+        cur.execute("INSERT INTO decks (deck_name) VALUES (%s)", (name,))
+        conn.commit()
+        return jsonify({'message': 'Deck added successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/decks/delete/<int:deck_id>', methods=['DELETE'])
+def delete_deck(deck_id):
+    """Delete a deck from the database."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("DELETE FROM decks WHERE deck_id = %s", (deck_id,))
+        conn.commit()
+        return jsonify({'message': 'Deck deleted successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/decks/<int:deck_id>/cards', methods=['GET'])
+def get_deck_cards(deck_id):
+    """Get all cards in a deck by deck_id."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("""
+                    SELECT c.card_id, c.name, c.price, c.card_uid, c.image_url, c.amount_owned
+                    FROM cards c
+                    JOIN deck_cards d ON c.card_id = d.card_id
+                    WHERE d.deck_id = %s
+                    """, (deck_id,))
+        data = cur.fetchall()
+        cards = []
+        for row in data:
+            cards.append({
+                'card_id': row[0],
+                'name': row[1],
+                'price': row[2],
+                'card_uid': row[3],
+                'image_url': row[4],
+                'amount_owned': row[5]
+            })
+        return jsonify(cards)
+    except psycopg2.OperationalError as e:
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/decks/<int:deck_id>/cards/add', methods=['POST'])
+def add_card_to_deck(deck_id):
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    data = request.json
+    print(f"Data: {data}")
+    name = data['name']
+    print(f"Name: {name}")
+    try:
+        cur.execute("SELECT card_id FROM cards WHERE name = %s", (name,))
+        card_id = cur.fetchone()
+        if card_id is None:
+            return jsonify({'message': 'Card not found.'})
+        else:
+            cur.execute("INSERT INTO deck_cards (deck_id, card_id) VALUES (%s, %s)", (deck_id, card_id))
+            conn.commit()
+            return jsonify({'message': 'Card added successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
 
 if __name__ == '__main__':
     app.run()
