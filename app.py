@@ -233,6 +233,39 @@ def delete_deck(deck_id):
         cur.close()
         conn.close()
 
+@app.route('/decks/<int:deck_id>/cards', methods=['GET'])
+def get_deck_cards(deck_id):
+    """Get all cards in a deck by deck_id."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("""
+                    SELECT c.card_id, c.name, c.price, c.card_uid, c.image_url, c.amount_owned
+                    FROM cards c
+                    JOIN deck_cards d ON c.card_id = d.card_id
+                    WHERE d.deck_id = %s
+                    """, (deck_id,))
+        data = cur.fetchall()
+        cards = []
+        for row in data:
+            cards.append({
+                'card_id': row[0],
+                'name': row[1],
+                'price': row[2],
+                'card_uid': row[3],
+                'image_url': row[4],
+                'amount_owned': row[5]
+            })
+        return jsonify(cards)
+    except psycopg2.OperationalError as e:
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
 
 if __name__ == '__main__':
     app.run()
