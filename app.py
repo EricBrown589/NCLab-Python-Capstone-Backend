@@ -1,8 +1,19 @@
+"""
+Flask REST API for managing collectible cards and decks.
+
+Provides endpoints to:
+- Retrieve, add, update, and delete cards (via PostgreSQL + Scryfall API)
+- Create, list, and delete decks
+- Manage cards within decks
+
+Requires Flask, flask_cors, psycopg2, requests, and a configured PostgreSQL database.
+"""
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
-import db_conn
 import requests
+import db_conn
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +24,7 @@ headers = {
     "Accept": "application/json"
 }
 
+#
 def create_tables():
     """Create the tables in the database if they don't exist already."""
     try:
@@ -96,7 +108,7 @@ def add_card():
     data = request.json
     scryfall_url = f"https://api.scryfall.com/cards/named?exact={data['name']}"
     try:
-        scryfall_response = requests.get(scryfall_url, headers=headers)
+        scryfall_response = requests.get(scryfall_url, headers=headers, timeout=5)
         scryfall_response.raise_for_status()
         scryfall_json = scryfall_response.json()
         card_name = scryfall_json['name']
@@ -110,13 +122,17 @@ def add_card():
         data = cur.fetchone()
         print(data)
         if data is None:
-            cur.execute("INSERT INTO cards (name, price, card_uid, image_url, amount_owned) VALUES (%s, %s, %s, %s, %s)", (card_name, card_price, card_uid, card_image, 1))
+            cur.execute("""
+                        INSERT INTO cards (name, price, card_uid, image_url, amount_owned) 
+                        VALUES (%s, %s, %s, %s, %s)
+                        """, (card_name, card_price, card_uid, card_image, 1),)
             conn.commit()
             return jsonify({'message': 'Card added successfully.'})
-        else:
-            cur.execute("UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s", (card_name,))
-            conn.commit()
-            return jsonify({'message': 'Card updated successfully.'})
+        cur.execute("""
+                    UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s, 
+                    """, (card_name,))
+        conn.commit()
+        return jsonify({'message': 'Card updated successfully.'})
     except psycopg2.Error as e:
         conn.rollback()
         return jsonify({'message': f"Error adding card: {e}"})
@@ -269,6 +285,7 @@ def get_deck_cards(deck_id):
 
 @app.route('/decks/<int:deck_id>/cards/add', methods=['POST'])
 def add_card_to_deck(deck_id):
+    """Add a card to a deck by deck_id and card_id."""
     try:
         conn = db_conn.db_connection()
         cur = conn.cursor()
@@ -283,10 +300,9 @@ def add_card_to_deck(deck_id):
         card_id = cur.fetchone()
         if card_id is None:
             return jsonify({'message': 'Card not found.'})
-        else:
-            cur.execute("INSERT INTO deck_cards (deck_id, card_id) VALUES (%s, %s)", (deck_id, card_id))
-            conn.commit()
-            return jsonify({'message': 'Card added successfully.'})
+        cur.execute("INSERT INTO deck_cards (deck_id, card_id) VALUES (%s, %s)", (deck_id, card_id))
+        conn.commit()
+        return jsonify({'message': 'Card added successfully.'})
     except psycopg2.OperationalError as e:
         conn.rollback()
         return jsonify({'error': str(e)})
