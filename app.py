@@ -214,5 +214,25 @@ def add_deck():
         cur.close()
         conn.close()
 
+@app.route('/decks/delete/<int:deck_id>', methods=['DELETE'])
+def delete_deck(deck_id):
+    """Delete a deck from the database."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("DELETE FROM decks WHERE deck_id = %s", (deck_id,))
+        conn.commit()
+        return jsonify({'message': 'Deck deleted successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
 if __name__ == '__main__':
     app.run()
