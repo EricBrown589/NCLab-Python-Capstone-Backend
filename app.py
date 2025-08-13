@@ -168,7 +168,51 @@ def delete_card(card_id):
         cur.close()
         conn.close()
 
-    ## add methods for decks
+@app.route('/decks', methods=['GET'])
+def get_decks():
+    """Get all decks from the database."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        cur.execute("SELECT * FROM decks")
+        data = cur.fetchall()
+        decks = []
+        for row in data:
+            decks.append({
+                'deck_id': row[0],
+                'name': row[1],
+            })
+        return jsonify(decks)
+    except psycopg2.OperationalError as e:
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/decks/add', methods=['POST'])
+def add_deck():
+    """Create a new deck in the database."""
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    try:
+        data = request.json
+        name = data['name']
+        cur.execute("INSERT INTO decks (deck_name) VALUES (%s)", (name,))
+        conn.commit()
+        return jsonify({'message': 'Deck added successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
 
 if __name__ == '__main__':
     app.run()
