@@ -267,5 +267,32 @@ def get_deck_cards(deck_id):
         conn.close()
 
 
+@app.route('/decks/<int:deck_id>/cards/add', methods=['POST'])
+def add_card_to_deck(deck_id):
+    try:
+        conn = db_conn.db_connection()
+        cur = conn.cursor()
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+    data = request.json
+    print(f"Data: {data}")
+    name = data['name']
+    print(f"Name: {name}")
+    try:
+        cur.execute("SELECT card_id FROM cards WHERE name = %s", (name,))
+        card_id = cur.fetchone()
+        if card_id is None:
+            return jsonify({'message': 'Card not found.'})
+        else:
+            cur.execute("INSERT INTO deck_cards (deck_id, card_id) VALUES (%s, %s)", (deck_id, card_id))
+            conn.commit()
+            return jsonify({'message': 'Card added successfully.'})
+    except psycopg2.OperationalError as e:
+        conn.rollback()
+        return jsonify({'error': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
 if __name__ == '__main__':
     app.run()
