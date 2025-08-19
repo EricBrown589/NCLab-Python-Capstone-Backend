@@ -40,7 +40,9 @@ def create_tables():
             price REAL,
             card_uid VARCHAR(255),
             image_url VARCHAR(255),
-            amount_owned REAL
+            amount_owned REAL,
+            colors VARCHAR[],
+            card_type VARCHAR(255)
         );
         """,
         """
@@ -71,13 +73,29 @@ create_tables()
 @app.route('/cards', methods=['GET'])
 def get_cards():  # put application's code here
     """Get all cards from the database."""
+    color_filter = request.args.getlist("colors")
+    type_filter = request.args.get("type")
+    query = "SELECT * FROM cards"
+    filter_conditions = []
+    params = []
+
+    if color_filter:
+        filter_conditions.append("colors @> %s::varchar[]")
+        params.append(color_filter)
+
+    if type_filter:
+        filter_conditions.append("card_type = %s")
+        params.append(type_filter)
+
+    if filter_conditions:
+        query += " WHERE " + " AND ".join(filter_conditions)
+    print("Received filters:", color_filter, type_filter)
     try:
         conn = db_conn.db_connection()
         cur = conn.cursor()
-    except psycopg2.Error as e:
-        print(f"Error connecting to PostgreSQL: {e}")
-    try:
-        cur.execute("SELECT card_id, name, price, card_uid, image_url, amount_owned FROM cards")
+        print("Colors filter:", color_filter)
+        print("Final query:", cur.mogrify(query, params))
+        cur.execute(query, params)
         data = cur.fetchall()
         cards = []
         for row in data:
@@ -87,9 +105,13 @@ def get_cards():  # put application's code here
                 'price': row[2],
                 'card_uid': row[3],
                 'image_url': row[4],
-                'amount_owned': row[5]
+                'amount_owned': row[5],
+                'colors': row[6],
+                'card_type': row[7],
             })
         return jsonify(cards), 200
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
     except psycopg2.Error as e:
         return jsonify({'message': f"Could not get data: {str(e)}"})
     finally:
@@ -99,7 +121,10 @@ def get_cards():  # put application's code here
 
 @app.route('/cards/post', methods=['POST', 'UPDATE'])
 def add_card():
-    """Call the Scryfall api and get a card to add to the database."""
+    """
+    Call the Scryfall api and get a card to add to the database,
+    if the card already exists in the database, increment amount_owned.
+    """
     try:
         conn = db_conn.db_connection()
         cur = conn.cursor()
@@ -111,10 +136,13 @@ def add_card():
         scryfall_response = requests.get(scryfall_url, headers=headers, timeout=5)
         scryfall_response.raise_for_status()
         scryfall_json = scryfall_response.json()
+        print(scryfall_json)
         card_name = scryfall_json['name']
         card_price = scryfall_json['prices']['usd']
         card_uid = scryfall_json['id']
         card_image = scryfall_json['image_uris']['small']
+        card_colors = scryfall_json['colors']
+        card_type = scryfall_json['type_line']
     except requests.exceptions.HTTPError as e:
         return jsonify({'error': str(e)})
     try:
@@ -123,9 +151,9 @@ def add_card():
         print(data)
         if data is None:
             cur.execute("""
-                        INSERT INTO cards (name, price, card_uid, image_url, amount_owned) 
-                        VALUES (%s, %s, %s, %s, %s)
-                        """, (card_name, card_price, card_uid, card_image, 1),)
+                        INSERT INTO cards (name, price, card_uid, image_url, amount_owned, colors, card_type) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """, (card_name, card_price, card_uid, card_image, 1, card_colors, card_type),)
             conn.commit()
             return jsonify({'message': 'Card added successfully.'})
         cur.execute("""
@@ -142,7 +170,7 @@ def add_card():
 
 @app.route('/cards/update', methods=['PUT'])
 def update_amount_owned():
-    """Update the amount of owned cards."""
+    """Update the amount_owned of a certain card in the database."""
     try:
         conn = db_conn.db_connection()
         cur = conn.cursor()
@@ -259,7 +287,7 @@ def get_deck_cards(deck_id):
         print(f"Error connecting to PostgreSQL: {e}")
     try:
         cur.execute("""
-                    SELECT c.card_id, c.name, c.price, c.card_uid, c.image_url, c.amount_owned
+                    SELECT c.card_id, c.name, c.price, c.card_uid, c.image_url, c.amount_owned, c.colors, c.card_type
                     FROM cards c
                     JOIN deck_cards d ON c.card_id = d.card_id
                     WHERE d.deck_id = %s
@@ -273,7 +301,9 @@ def get_deck_cards(deck_id):
                 'price': row[2],
                 'card_uid': row[3],
                 'image_url': row[4],
-                'amount_owned': row[5]
+                'amount_owned': row[5],
+                'colors': row[6],
+                'card_type': row[7],
             })
         return jsonify(cards)
     except psycopg2.OperationalError as e:
