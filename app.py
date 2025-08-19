@@ -73,13 +73,29 @@ create_tables()
 @app.route('/cards', methods=['GET'])
 def get_cards():  # put application's code here
     """Get all cards from the database."""
+    color_filter = request.args.getlist("colors")
+    type_filter = request.args.get("type")
+    query = "SELECT * FROM cards"
+    filter_conditions = []
+    params = []
+
+    if color_filter:
+        filter_conditions.append("colors @> %s::varchar[]")
+        params.append(color_filter)
+
+    if type_filter:
+        filter_conditions.append("card_type = %s")
+        params.append(type_filter)
+
+    if filter_conditions:
+        query += " WHERE " + " AND ".join(filter_conditions)
+    print("Received filters:", color_filter, type_filter)
     try:
         conn = db_conn.db_connection()
         cur = conn.cursor()
-    except psycopg2.Error as e:
-        print(f"Error connecting to PostgreSQL: {e}")
-    try:
-        cur.execute("SELECT card_id, name, price, card_uid, image_url, amount_owned, colors, card_type FROM cards")
+        print("Colors filter:", color_filter)
+        print("Final query:", cur.mogrify(query, params))
+        cur.execute(query, params)
         data = cur.fetchall()
         cards = []
         for row in data:
@@ -94,6 +110,8 @@ def get_cards():  # put application's code here
                 'card_type': row[7],
             })
         return jsonify(cards), 200
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL: {e}")
     except psycopg2.Error as e:
         return jsonify({'message': f"Could not get data: {str(e)}"})
     finally:
@@ -125,7 +143,6 @@ def add_card():
         card_image = scryfall_json['image_uris']['small']
         card_colors = scryfall_json['colors']
         card_type = scryfall_json['type_line']
-        print(f"Card name: {card_name}, card_price: {card_price}, card_uid: {card_uid}, card_type: {card_type}, card_image: {card_image}, card_colors: {card_colors}")
     except requests.exceptions.HTTPError as e:
         return jsonify({'error': str(e)})
     try:
