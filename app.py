@@ -10,6 +10,7 @@ Requires Flask, flask_cors, psycopg2, requests,
 and a configured PostgreSQL database.
 """
 
+import logging
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
@@ -19,6 +20,10 @@ import db_conn
 app = Flask(__name__)
 CORS(app)
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Headers for the API Requests
 headers = {
     "User-Agent": "PythonCapstone/1.0",
@@ -27,11 +32,16 @@ headers = {
 
 def get_db_cursor():
     """Helper function for creating a database connection and cursor."""
-    connection  = db_conn.db_connection()
+    connection = db_conn.db_connection()
     cursor = connection.cursor()
     return connection, cursor
 
-#
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    """Global handler for unexpected errors."""
+    logger.exception("Unexpected error: %s", e)
+    return jsonify({"error": "An unexpected error has occurred."}), 500
+
 def create_tables():
     """Create the tables in the database if they don't exist already."""
 
@@ -67,8 +77,10 @@ def create_tables():
         for command in create_tables_sql:
             cur.execute(command)
             conn.commit()
+        logger.info("Tables created successfully")
     except psycopg2.Error as e:
-        return "Error creating tables", e
+        logger.error("Error creating tables: %s", e)
+        conn.rollback()
     finally:
         cur.close()
         conn.close()
@@ -112,7 +124,8 @@ def list_cards():
             })
         return jsonify(cards), 200
     except psycopg2.Error as e:
-        return jsonify({'message': f"Could not get data: {str(e)}"})
+        logger.error("Error in list_cards: %s", e)
+        return jsonify({'error': "Database error occurred"}), 500
     finally:
         cur.close()
         conn.close()
@@ -125,7 +138,6 @@ def create_card():
     if the card already exists in the database, increment amount_owned.
     """
 
-    conn, cur = get_db_cursor()
     data = request.json
     scryfall_url = f"https://api.scryfall.com/cards/named?exact={data['name']}"
     try:
@@ -138,8 +150,11 @@ def create_card():
         card_image = scryfall_json['image_uris']['small']
         card_colors = scryfall_json['colors']
         card_type = scryfall_json['type_line']
-    except requests.exceptions.HTTPError as e:
-        return jsonify({'error': str(e)})
+    except requests.exceptions.RequestException as e:
+        logger.error("Scryfall API error: %s", e)
+        return jsonify({'error': "Failed to fetch card from Scryfall API."}), 502
+
+    conn, cur = get_db_cursor()
     try:
         cur.execute("SELECT * from cards where name = %s", (card_name,))
         data = cur.fetchone()
@@ -149,15 +164,16 @@ def create_card():
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """, (card_name, card_price, card_uid, card_image, 1, card_colors, card_type),)
             conn.commit()
-            return jsonify({'message': 'Card added successfully.'})
+            return jsonify({'message': 'Card added successfully.'}), 201
         cur.execute("""
-                    UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s, 
+                    UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s 
                     """, (card_name,))
         conn.commit()
-        return jsonify({'message': 'Card updated successfully.'})
+        return jsonify({'message': 'Card updated successfully.'}), 200
     except psycopg2.Error as e:
         conn.rollback()
-        return jsonify({'message': f"Error adding card: {e}"})
+        logger.error(f"Error in create_card: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -174,10 +190,11 @@ def update_card_amount():
         try:
             cur.execute("UPDATE cards SET amount_owned = %s WHERE name = %s", (update_amount, name))
             conn.commit()
-            return jsonify({'message': 'Amount updated successfully.'})
+            return jsonify({'message': 'Amount updated successfully.'}), 200
         except psycopg2.Error as e:
             conn.rollback()
-            return jsonify({'message': f"Error updating amount: {e}"})
+            logger.error(f"Error in update_card: %s", e)
+            return jsonify({'error': "Database error occurred."}), 500
     except requests.exceptions.HTTPError as e:
         return jsonify({'error': str(e)})
     finally:
@@ -192,10 +209,11 @@ def delete_card(card_id):
     try:
         cur.execute("DELETE FROM cards WHERE card_id = %s AND amount_owned = 0", (card_id,))
         conn.commit()
-        return jsonify({'message': 'Card deleted successfully.'})
-    except psycopg2.OperationalError as e:
+        return jsonify({'message': 'Card deleted successfully.'}), 200
+    except psycopg2.Error as e:
         conn.rollback()
-        return jsonify({'error': str(e)})
+        logger.error(f"Error in delete_card: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -214,9 +232,10 @@ def list_decks():
                 'deck_id': row[0],
                 'name': row[1],
             })
-        return jsonify(decks)
-    except psycopg2.OperationalError as e:
-        return jsonify({'error': str(e)})
+        return jsonify(decks), 200
+    except psycopg2.Error as e:
+        logger.error("Error in list_decks: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -232,10 +251,11 @@ def create_deck():
         name = data['name']
         cur.execute("INSERT INTO decks (deck_name) VALUES (%s)", (name,))
         conn.commit()
-        return jsonify({'message': 'Deck added successfully.'})
-    except psycopg2.OperationalError as e:
+        return jsonify({'message': 'Deck added successfully.'}), 201
+    except psycopg2.Error as e:
         conn.rollback()
-        return jsonify({'error': str(e)})
+        logger.error(f"Error in create_deck: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -248,10 +268,11 @@ def delete_deck(deck_id):
     try:
         cur.execute("DELETE FROM decks WHERE deck_id = %s", (deck_id,))
         conn.commit()
-        return jsonify({'message': 'Deck deleted successfully.'})
-    except psycopg2.OperationalError as e:
+        return jsonify({'message': 'Deck deleted successfully.'}), 200
+    except psycopg2.Error as e:
         conn.rollback()
-        return jsonify({'error': str(e)})
+        logger.error(f"Error in delete_deck: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -281,9 +302,10 @@ def list_deck_cards(deck_id):
                 'colors': row[6],
                 'card_type': row[7],
             })
-        return jsonify(cards)
-    except psycopg2.OperationalError as e:
-        return jsonify({'error': str(e)})
+        return jsonify(cards), 200
+    except psycopg2.Error as e:
+        logger.error(f"Error in list_deck_cards: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -300,13 +322,14 @@ def add_card_to_deck(deck_id):
         cur.execute("SELECT card_id FROM cards WHERE name = %s", (name,))
         card_id = cur.fetchone()
         if card_id is None:
-            return jsonify({'message': 'Card not found.'})
+            return jsonify({'message': 'Card not found.'}), 404
         cur.execute("INSERT INTO deck_cards (deck_id, card_id) VALUES (%s, %s)", (deck_id, card_id))
         conn.commit()
-        return jsonify({'message': 'Card added successfully.'})
-    except psycopg2.OperationalError as e:
+        return jsonify({'message': 'Card added successfully.'}), 201
+    except psycopg2.Error as e:
         conn.rollback()
-        return jsonify({'error': str(e)})
+        logger.error(f"Error in add_card_to_deck: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
