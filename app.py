@@ -36,6 +36,23 @@ def get_db_cursor():
     cursor = connection.cursor()
     return connection, cursor
 
+def get_card_image(scryfall_json):
+    """Helper function for retrieving a card image."""
+    # Standard card with one facing
+    if 'image_uris' in scryfall_json:
+        for size in ['small', 'normal', 'large', 'png']:
+            if size in scryfall_json['image_uris']:
+                return scryfall_json['image_uris'][size]
+    # Multi-faced card
+    if 'card_faces' in scryfall_json:
+        for face in scryfall_json['card_faces']:
+            uris = face['image_uris']
+            for size in ['small', 'normal', 'large', 'png']:
+                if size in uris:
+                    return uris[size]
+    # No images available
+    return None
+
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
     """Global handler for unexpected errors."""
@@ -50,11 +67,11 @@ def create_tables():
         """
         CREATE TABLE IF NOT EXISTS cards (
             card_id SERIAL PRIMARY KEY,
-            name VARCHAR(255),
-            price REAL,
-            card_uid VARCHAR(255),
-            image_url VARCHAR(255),
-            amount_owned REAL,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            price NUMERIC(10,2),
+            card_uid VARCHAR(255) NOT NULL UNIQUE,
+            image_url TEXT,
+            amount_owned INTEGER NOT NULL,
             colors VARCHAR[],
             card_type VARCHAR(255)
         );
@@ -62,14 +79,14 @@ def create_tables():
         """
         CREATE TABLE IF NOT EXISTS decks (
             deck_id SERIAL PRIMARY KEY,
-            deck_name VARCHAR(255)
+            deck_name VARCHAR(255) NOT NULL UNIQUE
         );
         """,
         """
         CREATE TABLE IF NOT EXISTS deck_cards (
             deck_cards_id SERIAL PRIMARY KEY,
-            deck_id INTEGER REFERENCES decks(deck_id),
-            card_id INTEGER REFERENCES cards(card_id)
+            deck_id INTEGER REFERENCES decks(deck_id) ON DELETE CASCADE,
+            card_id INTEGER REFERENCES cards(card_id) ON DELETE CASCADE
         );
         """
     )
@@ -131,7 +148,7 @@ def list_cards():
         conn.close()
 
 
-@app.route('/cards/post', methods=['POST', 'UPDATE'])
+@app.route('/cards/post', methods=['POST', 'PUT'])
 def create_card():
     """
     Call the Scryfall api and get a card to add to the database,
@@ -147,9 +164,9 @@ def create_card():
         card_name = scryfall_json['name']
         card_price = scryfall_json['prices']['usd']
         card_uid = scryfall_json['id']
-        card_image = scryfall_json['image_uris']['small']
         card_colors = scryfall_json['colors']
         card_type = scryfall_json['type_line']
+        card_image = get_card_image(scryfall_json)
     except requests.exceptions.RequestException as e:
         logger.error("Scryfall API error: %s", e)
         return jsonify({'error': "Failed to fetch card from Scryfall API."}), 502
@@ -187,16 +204,13 @@ def update_card_amount():
         data = request.json
         name = data['name']
         update_amount = data['amount_owned']
-        try:
-            cur.execute("UPDATE cards SET amount_owned = %s WHERE name = %s", (update_amount, name))
-            conn.commit()
-            return jsonify({'message': 'Amount updated successfully.'}), 200
-        except psycopg2.Error as e:
-            conn.rollback()
-            logger.error(f"Error in update_card: %s", e)
-            return jsonify({'error': "Database error occurred."}), 500
-    except requests.exceptions.HTTPError as e:
-        return jsonify({'error': str(e)})
+        cur.execute("UPDATE cards SET amount_owned = %s WHERE name = %s", (update_amount, name))
+        conn.commit()
+        return jsonify({'message': 'Amount updated successfully.'}), 200
+    except psycopg2.Error as e:
+        conn.rollback()
+        logger.error(f"Error in update_card: %s", e)
+        return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
         conn.close()
@@ -208,6 +222,8 @@ def delete_card(card_id):
     conn, cur = get_db_cursor()
     try:
         cur.execute("DELETE FROM cards WHERE card_id = %s AND amount_owned = 0", (card_id,))
+        if cur.rowcount == 0:
+            return jsonify({'error': "Card not found or amount_owned not zero."}), 404
         conn.commit()
         return jsonify({'message': 'Card deleted successfully.'}), 200
     except psycopg2.Error as e:
@@ -320,9 +336,10 @@ def add_card_to_deck(deck_id):
     name = data['name']
     try:
         cur.execute("SELECT card_id FROM cards WHERE name = %s", (name,))
-        card_id = cur.fetchone()
-        if card_id is None:
+        row = cur.fetchone()
+        if row is None:
             return jsonify({'message': 'Card not found.'}), 404
+        card_id = row[0]
         cur.execute("INSERT INTO deck_cards (deck_id, card_id) VALUES (%s, %s)", (deck_id, card_id))
         conn.commit()
         return jsonify({'message': 'Card added successfully.'}), 201
