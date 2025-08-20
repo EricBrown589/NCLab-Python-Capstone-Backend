@@ -59,49 +59,9 @@ def handle_unexpected_error(e):
     logger.exception("Unexpected error: %s", e)
     return jsonify({"error": "An unexpected error has occurred."}), 500
 
-def create_tables():
-    """Create the tables in the database if they don't exist already."""
+# Create tables in database
+db_conn.create_tables()
 
-    conn, cur = get_db_cursor()
-    create_tables_sql = (
-        """
-        CREATE TABLE IF NOT EXISTS cards (
-            card_id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL UNIQUE,
-            price NUMERIC(10,2),
-            card_uid VARCHAR(255) NOT NULL UNIQUE,
-            image_url TEXT,
-            amount_owned INTEGER NOT NULL,
-            colors VARCHAR[],
-            card_type VARCHAR(255)
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS decks (
-            deck_id SERIAL PRIMARY KEY,
-            deck_name VARCHAR(255) NOT NULL UNIQUE
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS deck_cards (
-            deck_cards_id SERIAL PRIMARY KEY,
-            deck_id INTEGER REFERENCES decks(deck_id) ON DELETE CASCADE,
-            card_id INTEGER REFERENCES cards(card_id) ON DELETE CASCADE
-        );
-        """
-    )
-    try:
-        for command in create_tables_sql:
-            cur.execute(command)
-            conn.commit()
-        logger.info("Tables created successfully")
-    except psycopg2.Error as e:
-        logger.error("Error creating tables: %s", e)
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
-create_tables()
 @app.route('/cards', methods=['GET'])
 def list_cards():
     """Get all cards from the database."""
