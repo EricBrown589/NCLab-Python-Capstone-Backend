@@ -34,7 +34,7 @@ There is an Angular UI frontend located [here](https://github.com/EricBrown589/N
 
 
 ## Requirements
-* Python 3.0+
+* Python 3.8+
 * PostgreSQL
 * Python Packages (see requirements.txt):
     * Flask
@@ -48,71 +48,47 @@ Install python dependencies: `pip install -r requirements.txt`
 * In db_conn.py replace the placeholders with the information for your local database
 ##  Api Endpoints
 
-#### Cards
-```
-GET /cards
-```
-List all cards (supports ?colors=Blue&colors=Red&type=Creature)
+### Cards
+| Method | Endpoint                  | Description                                                                 |
+|--------|---------------------------|-----------------------------------------------------------------------------|
+| GET    | `/cards`                  | List all cards (supports query params: `?colors=Blue&colors=Red&type=Creature`) |
+| POST   | `/cards/post`             | Add a new card from the Scryfall API using [exact name](https://scryfall.com/docs/api/cards/named) |
+| PUT    | `/cards/update`           | Update the `amount_owned` of a card                                         |
+| DELETE | `/cards/delete/<card_id>` | Delete a card if `amount_owned = 0`                                         |
 
-```
-POST /cards/post
-```
-Add a new card from the Scryfall API using [exact name](https://scryfall.com/docs/api/cards/named) 
+### Decks
+| Method | Endpoint                          | Description                              |
+|--------|-----------------------------------|------------------------------------------|
+| GET    | `/decks`                          | List all decks                           |
+| POST   | `/decks/add`                      | Create a new deck                        |
+| DELETE | `/decks/delete/<deck_id>`         | Delete a deck                            |
+| GET    | `/decks/<deck_id>/cards`          | List all cards in a deck                 |
+| POST   | `/decks/<deck_id>/cards/add`      | Add a card to a deck (by name)           |
 
-```
-PUT /cards/update
-```
-Updates amount owned of a card
-
-```
-DELETE /cards/delete/<card_id>
-```
-Deletes card if `amount_owned=0`
-
-#### Decks
-```
-GET /decks
-```
-List all decks
-
-```
-POST /decks/add
-```
-Create a new deck
-
-```
-DELETE /decks/delete/<deck_id>
-```
-Delete a deck
-
-```
-GET /decks/<deck_id>/cards
-```
-List all cards in a deck
-
-```
-POST /decks/<deck_id>/cards/add
-```
-Add a card to deck
 ## Future Work / Roadmap
 Planned improvement and features include:
 
 * Improving how I utilize the Scryfall API to search for cards and return multiple likely cards, instead of using exact name searching
 * More advanced filtering
 * Improved error handling and messages
+* Add testing
+* Retrieve more information about the cards from Scryfall for a more in-depth user experience
+* Reconfigure how the deleting of a card is handled
 
-Features to look into later:
+Long-Term Ideas:
 
 * Adding authentication and users
 * Deploying and hosting somewhere
+* Change DB connection handling, possibly with config file 
 
 ## Known Issues / Limitations
 * DELETE /cards/delete/<card_id> only deletes cards when amount_owned=0. Cards with remaining copies cannot be deleted.
 * No input validation for some routes
 * Can not search for multi-faced cards as of right now
-* Image sizes have been an issue
+* Getting image sizes have been an issue
 
 ## Status
 
 🚧 This is a capstone project and currently a work in progress. 🚧  
 Features and API are subject to change as development continues.
+
