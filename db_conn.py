@@ -14,8 +14,17 @@ import psycopg2
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def db_connection():
-    """Connect to the PostgreSQL database server"""
+    """Return a database connection.
+
+    Attempts to connect to the PostgreSQL database
+    and returns a psycopg2 connection.
+
+    Returns:
+        psycopg2 connection | None: An open connection to the PostgreSQL
+        database or none if connection was not established.
+    """
     try:
         conn = psycopg2.connect(
             # Replace default values with your database info
@@ -33,7 +42,6 @@ def db_connection():
 
 def create_tables():
     """Create the tables in the database if they don't exist already."""
-
     conn = db_connection()
     cur = conn.cursor()
     create_tables_sql = (

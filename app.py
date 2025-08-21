@@ -30,14 +30,27 @@ headers = {
     "Accept": "application/json"
 }
 
-def get_db_cursor():
-    """Helper function for creating a database connection and cursor."""
+
+def get_db():
+    """Return a database connection and cursor.
+
+    Returns:
+        tuple: (connection, cursor) to the PostgreSQL database.
+    """
     connection = db_conn.db_connection()
     cursor = connection.cursor()
     return connection, cursor
 
+
 def get_card_image(scryfall_json):
-    """Helper function for retrieving a card image."""
+    """Retrieve a card image URL from Scryfall response.
+
+    Args:
+        scryfall_json (dict): JSON object returned by Scryfall API.
+
+    Returns:
+         str | None: URL of card image or None.
+    """
     # Standard card with one facing
     if 'image_uris' in scryfall_json:
         for size in ['small', 'normal', 'large', 'png']:
@@ -53,20 +66,37 @@ def get_card_image(scryfall_json):
     # No images available
     return None
 
+
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
-    """Global handler for unexpected errors."""
+    """Global handler for unexpected errors.
+
+    Args:
+        e (Exception): The raised exception.
+
+    Returns:
+        flask.Response: JSON error message with HTTP 500 status.
+    """
     logger.exception("Unexpected error: %s", e)
     return jsonify({"error": "An unexpected error has occurred."}), 500
+
 
 # Create tables in database
 db_conn.create_tables()
 
+
 @app.route('/cards', methods=['GET'])
 def list_cards():
-    """Get all cards from the database."""
+    """Retrieve all cards from the database, with optional filters.
 
-    conn, cur = get_db_cursor()
+    Query parameters:
+        colors (list[str]): Filter by colors.
+        type (str): Filter by card types.
+
+    Returns:
+        flask.Response: JSON list of cards.
+    """
+    conn, cur = get_db()
     color_filter = request.args.getlist("colors")
     type_filter = request.args.get("type")
     query = "SELECT * FROM cards"
@@ -110,11 +140,20 @@ def list_cards():
 
 @app.route('/cards/post', methods=['POST', 'PUT'])
 def create_card():
-    """
-    Call the Scryfall api and get a card to add to the database,
-    if the card already exists in the database, increment amount_owned.
-    """
+    """Add a new card to the database or update its count.
 
+    Fetch card data from the Scryfall API, if the card is new
+    insert into the database. If the card exists in the database,
+    increment `amount_owned` by 1.`
+
+    Request JSON
+        {
+            "name": "Card Name"
+        }
+
+    Returns:
+        flask.Response: JSON message with HTTP 201, or HTTP 200.
+    """
     data = request.json
     scryfall_url = f"https://api.scryfall.com/cards/named?exact={data['name']}"
     try:
@@ -131,19 +170,19 @@ def create_card():
         logger.error("Scryfall API error: %s", e)
         return jsonify({'error': "Failed to fetch card from Scryfall API."}), 502
 
-    conn, cur = get_db_cursor()
+    conn, cur = get_db()
     try:
         cur.execute("SELECT * from cards where name = %s", (card_name,))
         data = cur.fetchone()
         if data is None:
             cur.execute("""
-                        INSERT INTO cards (name, price, card_uid, image_url, amount_owned, colors, card_type) 
+                        INSERT INTO cards (name, price, card_uid, image_url, amount_owned, colors, card_type)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """, (card_name, card_price, card_uid, card_image, 1, card_colors, card_type),)
             conn.commit()
             return jsonify({'message': 'Card added successfully.'}), 201
         cur.execute("""
-                    UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s 
+                    UPDATE cards SET amount_owned = amount_owned + 1 WHERE name = %s
                     """, (card_name,))
         conn.commit()
         return jsonify({'message': 'Card updated successfully.'}), 200
@@ -155,11 +194,21 @@ def create_card():
         cur.close()
         conn.close()
 
+
 @app.route('/cards/update', methods=['PUT'])
 def update_card_amount():
-    """Update the amount_owned of a certain card in the database."""
+    """Update the amount_owned of a card in the database.
 
-    conn, cur = get_db_cursor()
+    Request JSON:
+        {
+            "name": "Card Name
+            "amount_owned": 1
+        }
+
+    Returns:
+        flask.Response: JSON message with HTTP 200.
+    """
+    conn, cur = get_db()
     try:
         data = request.json
         name = data['name']
@@ -175,11 +224,18 @@ def update_card_amount():
         cur.close()
         conn.close()
 
+
 @app.route('/cards/delete/<int:card_id>', methods=['DELETE'])
 def delete_card(card_id):
-    """Delete card from the database when amount_owned is zero."""
+    """Delete card from the database when amount_owned is zero.
 
-    conn, cur = get_db_cursor()
+    Args:
+        card_id (int): ID of the card to delete.
+
+    Returns:
+        flask.Response: JSON message with HTTP 404 or HTTP 200.
+    """
+    conn, cur = get_db()
     try:
         cur.execute("DELETE FROM cards WHERE card_id = %s AND amount_owned = 0", (card_id,))
         if cur.rowcount == 0:
@@ -194,11 +250,15 @@ def delete_card(card_id):
         cur.close()
         conn.close()
 
+
 @app.route('/decks', methods=['GET'])
 def list_decks():
-    """Get all decks from the database."""
+    """Retrieve all decks from the database.
 
-    conn, cur = get_db_cursor()
+    Returns:
+        flask.Response: JSON list of all decks.
+    """
+    conn, cur = get_db()
     try:
         cur.execute("SELECT * FROM decks")
         data = cur.fetchall()
@@ -219,9 +279,17 @@ def list_decks():
 
 @app.route('/decks/add', methods=['POST'])
 def create_deck():
-    """Create a new deck in the database."""
+    """Create a new deck in the database.
 
-    conn, cur = get_db_cursor()
+    Request JSON
+        {
+            "name": "Deck name
+        }
+
+    Returns:
+        flask.Response: JSON message with HTTP 201.
+    """
+    conn, cur = get_db()
     try:
         data = request.json
         name = data['name']
@@ -236,11 +304,18 @@ def create_deck():
         cur.close()
         conn.close()
 
+
 @app.route('/decks/delete/<int:deck_id>', methods=['DELETE'])
 def delete_deck(deck_id):
-    """Delete a deck from the database."""
+    """Delete a deck from the database by ID.
 
-    conn, cur = get_db_cursor()
+    Args:
+        deck_id (int): ID of the deck to delete.
+
+    Returns:
+        flask.Response: JSON message with HTTP 200.
+    """
+    conn, cur = get_db()
     try:
         cur.execute("DELETE FROM decks WHERE deck_id = %s", (deck_id,))
         conn.commit()
@@ -253,11 +328,18 @@ def delete_deck(deck_id):
         cur.close()
         conn.close()
 
+
 @app.route('/decks/<int:deck_id>/cards', methods=['GET'])
 def list_deck_cards(deck_id):
-    """Get all cards in a deck by deck_id."""
+    """Retrieve all cards in a deck by deck_id.
 
-    conn, cur = get_db_cursor()
+    Args:
+        deck_id (int): ID of the deck to get cards from.
+
+    Returns:
+        flask.Response: JSON list of all cards in the deck.
+    """
+    conn, cur = get_db()
     try:
         cur.execute("""
                     SELECT c.card_id, c.name, c.price, c.card_uid, c.image_url, c.amount_owned, c.colors, c.card_type
@@ -289,9 +371,20 @@ def list_deck_cards(deck_id):
 
 @app.route('/decks/<int:deck_id>/cards/add', methods=['POST'])
 def add_card_to_deck(deck_id):
-    """Add a card to a deck by deck_id and card_id."""
+    """Add a card to a deck by deck_id and card_id.
 
-    conn, cur = get_db_cursor()
+    Request JSON
+        {
+            "name": "Card name",
+        }
+
+    Args:
+        deck_id (int): ID of the deck to add card to.
+
+    Returns:
+        flask.Response: JSON message with HTTP 201.
+    """
+    conn, cur = get_db()
     data = request.json
     name = data['name']
     try:
@@ -310,6 +403,7 @@ def add_card_to_deck(deck_id):
     finally:
         cur.close()
         conn.close()
+
 
 if __name__ == '__main__':
     app.run()
