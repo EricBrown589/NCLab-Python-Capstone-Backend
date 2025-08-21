@@ -149,7 +149,7 @@ def create_card():
         return jsonify({'message': 'Card updated successfully.'}), 200
     except psycopg2.Error as e:
         conn.rollback()
-        logger.error(f"Error in create_card: %s", e)
+        logger.error("Error in create_card: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
@@ -169,7 +169,7 @@ def update_card_amount():
         return jsonify({'message': 'Amount updated successfully.'}), 200
     except psycopg2.Error as e:
         conn.rollback()
-        logger.error(f"Error in update_card: %s", e)
+        logger.error("Error in update_card: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
@@ -188,7 +188,7 @@ def delete_card(card_id):
         return jsonify({'message': 'Card deleted successfully.'}), 200
     except psycopg2.Error as e:
         conn.rollback()
-        logger.error(f"Error in delete_card: %s", e)
+        logger.error("Error in delete_card: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
@@ -230,7 +230,7 @@ def create_deck():
         return jsonify({'message': 'Deck added successfully.'}), 201
     except psycopg2.Error as e:
         conn.rollback()
-        logger.error(f"Error in create_deck: %s", e)
+        logger.error("Error in create_deck: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
@@ -247,7 +247,7 @@ def delete_deck(deck_id):
         return jsonify({'message': 'Deck deleted successfully.'}), 200
     except psycopg2.Error as e:
         conn.rollback()
-        logger.error(f"Error in delete_deck: %s", e)
+        logger.error("Error in delete_deck: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
@@ -280,7 +280,7 @@ def list_deck_cards(deck_id):
             })
         return jsonify(cards), 200
     except psycopg2.Error as e:
-        logger.error(f"Error in list_deck_cards: %s", e)
+        logger.error("Error in list_deck_cards: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
@@ -305,7 +305,7 @@ def add_card_to_deck(deck_id):
         return jsonify({'message': 'Card added successfully.'}), 201
     except psycopg2.Error as e:
         conn.rollback()
-        logger.error(f"Error in add_card_to_deck: %s", e)
+        logger.error("Error in add_card_to_deck: %s", e)
         return jsonify({'error': "Database error occurred."}), 500
     finally:
         cur.close()
